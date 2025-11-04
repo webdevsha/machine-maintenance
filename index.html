@@ -3,40 +3,106 @@ Embed this in WordPress via a Custom HTML block.
 NOTE: This demo uses localStorage for accounts & data (browser-only).
 For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
 -->
+<!-- Added Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Open+Sans:wght@700&display=swap" rel="stylesheet">
+
 <div id="machine-lifetime-widget"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
 
 <style>
+  /* --- BRANDING CSS --- */
+  :root {
+    --color-black: #000000;
+    --color-slate: #0F172A;
+    --color-red: #E22627;
+    --color-blue: #007EFF;
+    --color-gray-bg: #E6ECEB;
+    --color-red-light: #FFF2F2;
+    --color-blue-light: #e0f2ff; /* Derived */
+  }
+
   /* Widget styling */
   #machine-lifetime-widget {
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
     max-width: 980px;
     margin: 20px auto;
-    border: 1px solid #e6e6e6;
+    border: 1px solid var(--color-gray-bg);
     padding: 18px;
     border-radius: 10px;
     background: #ffffff;
     box-shadow: 0 6px 20px rgba(16,24,40,0.04);
+    color: var(--color-slate);
   }
   .mlw-row { display:flex; gap:14px; flex-wrap:wrap; }
   .mlw-col { flex:1; min-width:260px; }
-  .mlw-title { font-size:18px; margin-bottom:6px; font-weight:700; color:#111827; }
-  input, select, textarea { width:100%; padding:8px; margin:6px 0 12px 0; border:1px solid #d1d5db; border-radius:8px; box-sizing:border-box; font-size:14px; }
-  button { padding:8px 12px; border-radius:8px; border:0; background:#2563eb; color:#fff; cursor:pointer; font-weight:600; }
-  button.secondary { background:#6b7280; }
-  .small { font-size:13px; color:#374151; }
+  .mlw-title {
+    font-family: 'Open Sans', sans-serif;
+    font-size:18px;
+    margin-bottom:6px;
+    font-weight:700;
+    color: var(--color-slate);
+  }
+  input, select, textarea {
+    width:100%;
+    padding:8px;
+    margin:6px 0 12px 0;
+    border:1px solid #d1d5db;
+    border-radius:8px;
+    box-sizing:border-box;
+    font-size:14px;
+    font-family: 'Inter', sans-serif;
+  }
+  button {
+    padding:8px 12px;
+    border-radius:8px;
+    border:0;
+    background: var(--color-blue);
+    color:#fff;
+    cursor:pointer;
+    font-weight:600;
+    font-family: 'Inter', sans-serif;
+  }
+  button.secondary {
+    background: var(--color-gray-bg);
+    color: var(--color-slate);
+  }
+  .small { font-size:13px; color: var(--color-slate); opacity: 0.9; }
   .badge { display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; background:#f3f4f6; }
   .canvas-wrap { margin:12px 0 18px 0; height:340px; }
-  .maintenance-list { max-height:220px; overflow:auto; padding:8px; border:1px solid #f3f4f6; border-radius:8px; background:#fafafa; }
+  .maintenance-list {
+    max-height:220px;
+    overflow:auto;
+    padding:8px;
+    border:1px solid #f3f4f6;
+    border-radius:8px;
+    background:#fafafa;
+  }
   .log-item { border-top:1px dashed #eee; padding:8px 0; }
-  .info-line { margin:6px 0; color:#374151; }
-  .notes { white-space:pre-wrap; color:#374151; }
+  .info-line { margin:6px 0; color: var(--color-slate); }
+  .notes { white-space:pre-wrap; color: var(--color-slate); opacity: 0.8; }
   .muted { color:#6b7280; font-size:13px; }
   .center { text-align:center; }
   .flex { display:flex; gap:8px; align-items:center; }
-  .chip { background:#eef2ff; padding:6px 10px; border-radius:999px; font-weight:600; color:#1e3a8a;}
+  .chip {
+    background: var(--color-blue-light);
+    padding:6px 10px;
+    border-radius:999px;
+    font-weight:600;
+    color: var(--color-blue);
+  }
   .inline-small { font-size:13px; color:#4b5563; }
+  
+  /* Custom delete button style */
+  button.mlw_btn_del_log {
+    font-size: 12px !important;
+    padding: 2px 6px !important;
+    background: var(--color-red) !important;
+    color: white !important;
+    border-radius: 6px !important;
+  }
 </style>
 
 <script>
@@ -172,7 +238,7 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
               - Jangka hayat asas: <strong>100% → 0% dalam 10 tahun</strong> (linear).<br/>
               - Penyelenggaraan <span class="badge">kendiri</span> menambah <strong>0.01%</strong> (per event).<br/>
               - Penyelenggaraan <span class="badge">major</span> menambah <strong>1%</strong> (per event).<br/>
-              - Setiap maintenance effect diratakan masuk selama <strong>${SMOOTH_MONTHS} bulan</strong> supaya garis nampak lebih realistik.<br/>
+              - Setiap maintenance effect diratakan masuk selama <strong>${SMOOTH_MONTHS} bulan</strong> (menggunakan 'ease-in-out curve') supaya garis nampak lebih realistik.<br/>
             </div>
             <div style="margin-top:10px;">
               <button id="mlw_btn_gen_dummy" class="secondary">Generate Dummy Past Records</button>
@@ -233,13 +299,20 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
 
       // CHART
       let chart = null;
-      function baselinePercentAt(dateISO, purchaseISO) {
+      
+      // --- CHANGED: baselinePercentAt now accepts a clamp parameter ---
+      // This is the core fix for the graph.
+      // The (clampToZero = true) is for the visible dotted line (stops at 0).
+      // The (clampToZero = false) is for the internal calculation, allowing the baseline to go negative
+      // so we can add the maintenance boost to it correctly.
+      function baselinePercentAt(dateISO, purchaseISO, clampToZero = true) {
         const p = new Date(purchaseISO);
         const d = new Date(dateISO);
         if (d < p) return 100;
         const elapsed = d - p;
-        const percent = Math.max(0, 100 - (elapsed / (TEN_YEARS_DAYS * 24*3600*1000)) * 100);
-        return percent;
+        const percent = 100 - (elapsed / (TEN_YEARS_DAYS * 24*3600*1000)) * 100;
+        // If clampToZero is true, stop at 0. Otherwise, allow negative values for calculation.
+        return clampToZero ? Math.max(0, percent) : percent;
       }
 
       // makeMonthlyLabels now allows dynamic extension based on total maintenance boost
@@ -266,11 +339,18 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
       function computeSeries(machine) {
         const totalBoost = (machine.maintenances || []).reduce((sum, m) => sum + (EFFECTS[m.type] || 0), 0);
         const labels = makeMonthlyLabels(machine.purchaseDate, totalBoost);
-        const baseline = labels.map(l => baselinePercentAt(l, machine.purchaseDate));
+        
+        // --- CHANGED: Baseline vs Adjusted calculation ---
+        // 'baseline' is the visible dotted line, clamped at 0.
+        const baseline = labels.map(l => baselinePercentAt(l, machine.purchaseDate, true));
+        // 'adjusted' is the internal calculation array, *not* clamped, so it can go negative.
+        const adjusted = labels.map(l => baselinePercentAt(l, machine.purchaseDate, false));
+
         // prepare maintenances sorted asc
         const maints = (machine.maintenances || []).slice().sort((a,b) => a.date.localeCompare(b.date));
-        // precompute adjusted array starting from baseline
-        const adjusted = baseline.slice();
+        
+        // Easing function: x goes from 0 to 1
+        const easeInOutSine = (x) => -(Math.cos(Math.PI * x) - 1) / 2;
 
         // for each maintenance, distribute its boost over the next SMOOTH_MONTHS months
         for (const m of maints) {
@@ -280,18 +360,30 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
           if (idx === -1) continue;
           for (let j = idx; j < labels.length; j++) {
             const monthsSince = j - idx;
-            const factor = Math.min(1, (monthsSince + 1) / SMOOTH_MONTHS); // +1 so first month gets small chunk
+            // Calculate progress from 0.0 to 1.0 over SMOOTH_MONTHS
+            let progress = Math.min(1, (monthsSince + 1) / SMOOTH_MONTHS);
+            // Apply easing function
+            const factor = easeInOutSine(progress);
+            // Add the boost. This is why 'adjusted' couldn't be clamped.
+            // e.g., -10% (baseline) + 20% (boost) = +10%
             adjusted[j] = Math.min(100, adjusted[j] + boost * factor);
           }
         }
+        
+        // --- CHANGED: Final clamp ---
+        // Now that all boosts are added, *now* we clamp the final array to 0.
+        const finalAdjusted = adjusted.map(v => Math.max(0, v));
+
         // create maintenance markers (position & y)
         const markers = maints.map(m => {
           let idx = labels.findIndex(l => l >= m.date);
           if (idx === -1) idx = labels.length - 1;
-          return { ...m, index: idx, y: adjusted[idx] };
+          // Use finalAdjusted[idx] for the marker's Y position
+          return { ...m, index: idx, y: finalAdjusted[idx] };
         });
 
-        return { labels, baseline, adjusted, markers };
+        // Return the clamped baseline and the final adjusted line
+        return { labels, baseline, adjusted: finalAdjusted, markers };
       }
 
       function drawChartFor(key) {
@@ -316,26 +408,26 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
                 data: s.baseline,
                 fill: false,
                 borderColor: "rgba(107,114,128,0.75)",
-                borderDash: [8,6],
+                borderDash: [5, 5], 
                 pointRadius: 0,
-                tension: 0.05,
+                tension: 0, // perfectly straight
                 borderWidth: 2
               },
               {
                 label: "Tambahan Jangka Hayat",
                 data: s.baseline.map((_, i) => i >= (12*10) ? 100 : null),
                 fill: true,
-                backgroundColor: "rgba(147,197,253,0.15)",
+                backgroundColor: "rgba(0, 126, 255, 0.05)", // Branded
                 borderWidth: 0,
                 pointRadius: 0
               },
               {
                 label: "Jangka Hayat Selepas Penyelenggaraan",
-                data: s.adjusted,
+                data: s.adjusted, // This is now the finalAdjusted array
                 fill: false,
-                borderColor: "rgba(37,99,235,0.95)",
+                borderColor: "var(--color-blue)", // Branded
                 pointRadius: 2,
-                tension: 0.2,
+                tension: 0.4, // more curved
                 borderWidth: 2
               },
               // markers will be added as scatter dataset below
@@ -381,7 +473,8 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
             data: s.markers.map(m => ({ x: s.labels[m.index], y: m.y, type: m.type, date: m.date })),
             pointStyle: s.markers.map(m => m.type === 'major' ? 'triangle' : 'circle'),
             pointRadius: s.markers.map(m => m.type === 'major' ? 6 : 4),
-            backgroundColor: s.markers.map(m => m.type === 'major' ? 'rgba(220,38,38,0.9)' : 'rgba(16,185,129,0.9)'),
+            // Branded colors
+            backgroundColor: s.markers.map(m => m.type === 'major' ? 'var(--color-red)' : 'rgba(16,185,129,0.9)'),
             showLine: false
           });
         }
@@ -403,18 +496,30 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
         const eol = new Date(purchase.getTime() + TEN_YEARS_DAYS * 24*3600*1000);
         const eolISO = eol.toISOString().slice(0,10);
         const todayISO = new Date().toISOString().slice(0,10);
-        const baselineNow = baselinePercentAt(todayISO, m.purchaseDate);
-        // compute total boosts (applied fully if past smooth months)
-        let boostNow = 0;
+        
+        // Use the clamped baseline for "Jangka hayat asas hari ini"
+        const baselineNow = baselinePercentAt(todayISO, m.purchaseDate, true);
+        
+        // Recalculate healthBoostNow for *current health* using the smoothing logic
+        let healthBoostNow = 0;
+        const easeInOutSine = (x) => -(Math.cos(Math.PI * x) - 1) / 2;
         (m.maintenances || []).forEach(mm => {
-          if (mm.date <= todayISO) {
-            boostNow += EFFECTS[mm.type] || 0;
-          }
+            if (mm.date <= todayISO) {
+                const boost = EFFECTS[mm.type] || 0;
+                const monthsSince = monthsBetween(mm.date, todayISO);
+                let progress = Math.min(1, (monthsSince + 1) / SMOOTH_MONTHS);
+                const factor = easeInOutSine(progress);
+                healthBoostNow += boost * factor;
+            }
         });
-        const adjustedNow = Math.min(100, baselineNow + boostNow);
 
-        // calculate extended EOL date
-        const yearsExtended = boostNow / 10; // every +1% = +0.1 year
+        // Use the *unclamped* baseline for calculating adjusted health
+        const rawBaselineNow = baselinePercentAt(todayISO, m.purchaseDate, false);
+        const adjustedNow = Math.min(100, Math.max(0, rawBaselineNow + healthBoostNow));
+
+        // Calculate extended EOL date based on *total* boost from *all* logs
+        const totalBoostAllTime = (m.maintenances || []).reduce((sum, mm) => sum + (EFFECTS[mm.type] || 0), 0);
+        const yearsExtended = totalBoostAllTime / 10; // every +1% = +0.1 year
         const eolAdjusted = new Date(eol.getTime() + yearsExtended * DAYS_IN_YEAR * 24 * 3600 * 1000);
         const eolAdjustedISO = eolAdjusted.toISOString().slice(0,10);
 
@@ -424,8 +529,11 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
           <div class="info-line"><strong>Tarikh Beli:</strong> ${m.purchaseDate}</div>
           <div class="info-line"><strong>Jangka hayat tamat (base):</strong> ${eolISO} (10 tahun selepas pembelian)</div>
           <div class="info-line"><strong>Jangka hayat asas hari ini:</strong> ${baselineNow.toFixed(2)}%</div>
-          <div class="info-line"><strong>Jangka hayat dijangka tamat (setelah diselenggara):</strong> ${adjustedNow.toFixed(2)}%</div>
-          <div class="info-line"><strong>Tarikh jangka hayat dijangka tamat (setelah diselenggara):</strong> ${eolAdjustedISO}</div>
+          <div class="info-line"><strong>Jangka hayat (diselenggara) hari ini:</strong> ${adjustedNow.toFixed(2)}%</div>
+          <!-- CHANGED: Branded highlight style -->
+          <div class="info-line" style="background-color: var(--color-blue-light); color: var(--color-blue); font-weight: 600; padding: 6px 10px; border-radius: 6px;">
+            <strong>Tarikh jangka hayat dijangka tamat (setelah diselenggara):</strong> ${eolAdjustedISO}
+          </div>
         `;
 
 
@@ -438,10 +546,23 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
           for (const mm of maints) {
             const item = document.createElement("div");
             item.className = "log-item";
+            
+            const boostPct = EFFECTS[mm.type] || 0;
+            const boostDays = (boostPct / 10 * DAYS_IN_YEAR).toFixed(1);
+
             item.innerHTML = `
-              <div><strong>${mm.date}</strong> — <span class="badge">${mm.type}</span> by ${mm.name} (${mm.role})</div>
-              <div class="notes small">${(mm.notes||'')}</div>
-              <div style="margin-top:6px;"><button class="mlw_btn_del_log" data-id="${mm.id}">Padam</button></div>
+              <div class="flex" style="justify-content: space-between; align-items: flex-start;">
+                <div>
+                  <strong>${mm.date}</strong> — <span class="badge">${mm.type}</span> by ${mm.name} (${mm.role})
+                  <div class="notes small" style="margin-top: 4px;">${(mm.notes||'Tiada nota')}</div>
+                </div>
+                <!-- Branded chip -->
+                <div class="chip" style="font-size: 12px; flex-shrink: 0; margin-left: 8px;">+${boostPct.toFixed(2)}% (+${boostDays} hari)</div>
+              </div>
+              <div style="margin-top:6px;">
+                <!-- Branded delete button -->
+                <button class="mlw_btn_del_log" data-id="${mm.id}">Padam</button>
+              </div>
             `;
             logsDiv.appendChild(item);
           }
@@ -499,7 +620,7 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
           items.push({ id: uid(), date: iso, name: "Auto Demo", role: "Student", type: "kendiri", notes: "Auto monthly kendiri" });
           // every 6 months from start -> major
           const monthsSinceStart = monthsBetween(start.toISOString().slice(0,10), d.toISOString().slice(0,10));
-          if (monthsSinceStart % 6 === 0) {
+          if (monthsSinceStart > 0 && monthsSinceStart % 6 === 0) { // Added > 0 check
             items.push({ id: uid(), date: iso, name: "Auto Demo", role: "Technician", type: "major", notes: "Auto semiannual major" });
           }
           d.setMonth(d.getMonth() + 1);
@@ -526,7 +647,13 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
         const type = document.getElementById("mlw_log_type").value;
         const notes = document.getElementById("mlw_log_notes").value.trim();
         if (!date || !name) return alert("Sila isi tarikh dan nama penyelenggara");
+        
+        // --- Validation: Cannot log before purchase date ---
         const m = data[session].machines[key];
+        if (date < m.purchaseDate) {
+            return alert(`Tarikh log (${date}) tidak boleh sebelum tarikh pembelian mesin (${m.purchaseDate}).`);
+        }
+        
         m.maintenances = m.maintenances || [];
         m.maintenances.push({ id: uid(), date, name, role, type, notes });
         m.maintenances.sort((a,b) => a.date.localeCompare(b.date));
@@ -567,3 +694,4 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
     render();
   })();
 </script>
+
