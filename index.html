@@ -307,6 +307,7 @@ Embed this in WordPress via a Custom HTML block.
           email,
           password,
           options: {
+            emailRedirectTo: window.location.href,
             data: {
               username: username || email.split('@')[0]
             }
@@ -635,7 +636,7 @@ Embed this in WordPress via a Custom HTML block.
         
         info.innerHTML = `
           <div class="health-status ${healthClass}">
-            Status Kesihatan Mesin: <strong>${healthStatus}</strong>
+            Status Kesihatan Mesin {machine.name}: <strong>${healthStatus}</strong>
           </div>
           <div class="info-line" style="margin-top: 10px;"><strong>Nama:</strong> ${machine.name}</div>
           <div><strong>ID Mesin:</strong> ${machine.machine_id}</div>
