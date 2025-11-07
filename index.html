@@ -1,9 +1,7 @@
 <!--
+Machine Lifetime Tracker with Supabase Backend
 Embed this in WordPress via a Custom HTML block.
-NOTE: This demo uses localStorage for accounts & data (browser-only).
-For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
 -->
-<!-- Added Google Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Open+Sans:wght@700&display=swap" rel="stylesheet">
@@ -11,9 +9,10 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
 <div id="machine-lifetime-widget"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
-  /* --- BRANDING CSS --- */
+  
   :root {
     --color-black: #000000;
     --color-slate: #0F172A;
@@ -21,10 +20,13 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
     --color-blue: #007EFF;
     --color-gray-bg: #E6ECEB;
     --color-red-light: #FFF2F2;
-    --color-blue-light: #e0f2ff; /* Derived */
+    --color-blue-light: #e0f2ff;
+    --color-green-light: #dcfce7;
+    --color-green-dark: #166534;
+    --color-yellow-light: #fefce8;
+    --color-yellow-dark: #854d0e;
   }
 
-  /* Widget styling */
   #machine-lifetime-widget {
     font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
     max-width: 980px;
@@ -36,6 +38,8 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
     box-shadow: 0 6px 20px rgba(16,24,40,0.04);
     color: var(--color-slate);
   }
+  
+  
   .mlw-row { display:flex; gap:14px; flex-wrap:wrap; }
   .mlw-col { flex:1; min-width:260px; }
   .mlw-title {
@@ -69,6 +73,10 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
     background: var(--color-gray-bg);
     color: var(--color-slate);
   }
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
   .small { font-size:13px; color: var(--color-slate); opacity: 0.9; }
   .badge { display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; background:#f3f4f6; }
   .canvas-wrap { margin:12px 0 18px 0; height:340px; }
@@ -95,7 +103,6 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
   }
   .inline-small { font-size:13px; color:#4b5563; }
   
-  /* Custom delete button style */
   button.mlw_btn_del_log {
     font-size: 12px !important;
     padding: 2px 6px !important;
@@ -103,38 +110,115 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
     color: white !important;
     border-radius: 6px !important;
   }
+  
+  .health-status {
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-weight: 700;
+    text-align: center;
+    margin-top: 10px;
+    font-size: 14px;
+  }
+  .health-baik {
+    background-color: var(--color-green-light);
+    color: var(--color-green-dark);
+  }
+  .health-sederhana {
+    background-color: var(--color-yellow-light);
+    color: var(--color-yellow-dark);
+  }
+  .health-buruk {
+    background-color: var(--color-red-light);
+    color: var(--color-red);
+  }
+  
+  .loading {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 0.6s linear infinite;
+  }
+  
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
 </style>
 
 <script>
   (function () {
+    // IMPORTANT: Replace these with your actual Supabase credentials
+    const SUPABASE_URL = 'https://rrtcjmvqvcwzqchfrpna.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJydGNqbXZxdmN3enFjaGZycG5hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI0OTk0NTIsImV4cCI6MjA3ODA3NTQ1Mn0.YHDGfY9dlzXzFPAQ7N5bROGl-OHRjkDB-Z6wOBVxq0E';
+    
+    // Initialize Supabase client
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    
     // ------------------ CONFIG ------------------
     const DAYS_IN_YEAR = 365;
-    const TEN_YEARS_DAYS = 10 * DAYS_IN_YEAR; // FIXED to 10 years
-    const SMOOTH_MONTHS = 6; // how many months to smooth each maintenance's effect in
-    const KEY_USERS = "mlw_users_v2";
-    const KEY_SESS = "mlw_session_v2";
-    const KEY_DATA = "mlw_data_v2";
-    // Maintenance effect values:
-    const EFFECTS = { kendiri: 0.01, major: 1.0 };
+    const TEN_YEARS_DAYS = 10 * DAYS_IN_YEAR;
+    const SMOOTH_MONTHS = 6;
+    const EFFECTS = { kendiri: 0.001, major: 0.01 };
+    
+    let currentUser = null;
+    let machines = [];
+    let currentMachine = null;
+    let maintenances = [];
+    
     // ------------------ UTIL ------------------
-    function uid() { return "u_" + Math.random().toString(36).slice(2, 9); }
-    function save(k, v) { localStorage.setItem(k, JSON.stringify(v)); }
-    function load(k, fallback = null) { const s = localStorage.getItem(k); return s ? JSON.parse(s) : fallback; }
     function monthsBetween(a, b) {
-      const A = new Date(a), B = new Date(b);
+      let A = new Date(a), B = new Date(b);
+      if (A > B) [A, B] = [B, A];
       return (B.getFullYear() - A.getFullYear()) * 12 + (B.getMonth() - A.getMonth());
     }
-    // ------------------ INIT STORAGE ------------------
-    let users = load(KEY_USERS, {});
-    let session = load(KEY_SESS, null);
-    let data = load(KEY_DATA, {}); // structure: { username: { machines: { machineKey: { name, machineId, purchaseDate, maintenances: [] }}}}
 
     const root = document.getElementById("machine-lifetime-widget");
 
+    // ------------------ SUPABASE HELPERS ------------------
+    async function checkAuth() {
+      const { data: { user } } = await supabase.auth.getUser();
+      currentUser = user;
+      return user;
+    }
+
+    async function loadUserMachines() {
+      if (!currentUser) return [];
+      const { data, error } = await supabase
+        .from('machines')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('[v0] Error loading machines:', error);
+        return [];
+      }
+      return data || [];
+    }
+
+    async function loadMachineMaintenance(machineId) {
+      if (!currentUser) return [];
+      const { data, error } = await supabase
+        .from('maintenances')
+        .select('*')
+        .eq('machine_id', machineId)
+        .eq('user_id', currentUser.id)
+        .order('maintenance_date', { ascending: true });
+      
+      if (error) {
+        console.error('[v0] Error loading maintenance:', error);
+        return [];
+      }
+      return data || [];
+    }
+
     // ------------------ RENDER ------------------
-    function render() {
+    async function render() {
       root.innerHTML = "";
-      if (!session) return renderAuth();
+      const user = await checkAuth();
+      if (!user) return renderAuth();
       return renderApp();
     }
 
@@ -146,70 +230,109 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
         <div class="mlw-row">
           <div class="mlw-col">
             <div><strong>Log Masuk</strong></div>
-            <div class="small">Gunakan username & password (disimpan di browser).</div>
-            <input id="mlw_login_user" placeholder="Username (contoh: amin)"/>
+            <div class="small">Gunakan email & password. Data disimpan dalam Supabase.</div>
+            <input id="mlw_login_email" placeholder="Email" type="email"/>
             <input id="mlw_login_pass" placeholder="Password" type="password"/>
             <div style="display:flex;gap:8px;">
               <button id="mlw_btn_login">Log Masuk</button>
-              <button id="mlw_btn_demo" class="secondary">Masuk sebagai Demo</button>
             </div>
+            <div id="mlw_login_error" class="small" style="color: var(--color-red); margin-top: 8px;"></div>
           </div>
           <div class="mlw-col">
             <div><strong>Daftar Akaun Baru</strong></div>
-            <div class="small">Akaun ringkas. Untuk produksi, gunakan server.</div>
-            <input id="mlw_reg_user" placeholder="Pilih username"/>
-            <input id="mlw_reg_pass" placeholder="Pilih password" type="password"/>
-            <button id="mlw_btn_register" class="secondary">Daftar & Log Masuk</button>
+            <div class="small">Daftar dengan email. Anda akan terima email pengesahan.</div>
+            <input id="mlw_reg_email" placeholder="Email" type="email"/>
+            <input id="mlw_reg_username" placeholder="Username (pilihan)" />
+            <input id="mlw_reg_pass" placeholder="Password (min 6 characters)" type="password"/>
+            <button id="mlw_btn_register" class="secondary">Daftar</button>
+            <div id="mlw_reg_error" class="small" style="color: var(--color-red); margin-top: 8px;"></div>
           </div>
         </div>
       `;
       root.appendChild(c);
 
-      document.getElementById("mlw_btn_login").onclick = () => {
-        const u = document.getElementById("mlw_login_user").value.trim();
-        const p = document.getElementById("mlw_login_pass").value;
-        if (!u || !p) return alert("Isi username dan password");
-        if (!users[u] || users[u].password !== p) return alert("Invalid username / password");
-        session = u; save(KEY_SESS, u);
-        if (!data[session]) data[session] = { machines: {} }, save(KEY_DATA, data);
-        alert("Logged in as " + u);
-        render();
-      };
-      document.getElementById("mlw_btn_register").onclick = () => {
-        const u = document.getElementById("mlw_reg_user").value.trim();
-        const p = document.getElementById("mlw_reg_pass").value;
-        if (!u || !p) return alert("Isi username dan password untuk daftar");
-        if (users[u]) return alert("Username sudah wujud");
-        users[u] = { password: p }; save(KEY_USERS, users);
-        data[u] = { machines: {} }; save(KEY_DATA, data);
-        session = u; save(KEY_SESS, u);
-        alert("Akaun terdaftar & log masuk sebagai " + u);
-        render();
-      };
-      document.getElementById("mlw_btn_demo").onclick = () => {
-        const u = "demo_user";
-        users[u] = { password: "demo" }; save(KEY_USERS, users);
-        data[u] = data[u] || { machines: {} };
-        // create one demo machine if none
-        if (!Object.keys(data[u].machines).length) {
-          const mk = "CMM-001";
-          data[u].machines[mk] = {
-            name: "CMM",
-            machineId: mk,
-            purchaseDate: "2024-11-01",
-            maintenances: []
-          };
-          save(KEY_DATA, data);
+      document.getElementById("mlw_btn_login").onclick = async () => {
+        const email = document.getElementById("mlw_login_email").value.trim();
+        const password = document.getElementById("mlw_login_pass").value;
+        const errorDiv = document.getElementById("mlw_login_error");
+        const btn = document.getElementById("mlw_btn_login");
+        
+        if (!email || !password) {
+          errorDiv.textContent = "Sila isi email dan password";
+          return;
         }
-        session = u; save(KEY_SESS, u);
-        alert("Logged in as Demo");
+        
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loading"></span> Logging in...';
+        errorDiv.textContent = "";
+        
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        
+        if (error) {
+          errorDiv.textContent = `Error: ${error.message}`;
+          btn.disabled = false;
+          btn.textContent = "Log Masuk";
+          return;
+        }
+        
+        currentUser = data.user;
         render();
+      };
+
+      document.getElementById("mlw_btn_register").onclick = async () => {
+        const email = document.getElementById("mlw_reg_email").value.trim();
+        const username = document.getElementById("mlw_reg_username").value.trim();
+        const password = document.getElementById("mlw_reg_pass").value;
+        const errorDiv = document.getElementById("mlw_reg_error");
+        const btn = document.getElementById("mlw_btn_register");
+        
+        if (!email || !password) {
+          errorDiv.textContent = "Sila isi email dan password";
+          return;
+        }
+        
+        if (password.length < 6) {
+          errorDiv.textContent = "Password mesti sekurang-kurangnya 6 characters";
+          return;
+        }
+        
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loading"></span> Registering...';
+        errorDiv.textContent = "";
+        
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              username: username || email.split('@')[0]
+            }
+          }
+        });
+        
+        if (error) {
+          errorDiv.textContent = `Error: ${error.message}`;
+          btn.disabled = false;
+          btn.textContent = "Daftar";
+          return;
+        }
+        
+        alert("Akaun berjaya didaftar! Sila check email anda untuk pengesahan. Anda perlu verify email sebelum log masuk.");
+        document.getElementById("mlw_reg_email").value = "";
+        document.getElementById("mlw_reg_username").value = "";
+        document.getElementById("mlw_reg_pass").value = "";
+        btn.disabled = false;
+        btn.textContent = "Daftar";
       };
     }
 
     // ---------- APP ----------
-    function renderApp() {
-      if (!data[session]) data[session] = { machines: {} }, save(KEY_DATA, data);
+    async function renderApp() {
+      machines = await loadUserMachines();
+      
       const container = document.createElement("div");
       container.innerHTML = `
         <div class="mlw-row">
@@ -236,13 +359,13 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
             <div class="mlw-title">Bantuan & Nota</div>
             <div class="small">
               - Jangka hayat asas: <strong>100% → 0% dalam 10 tahun</strong> (linear).<br/>
-              - Penyelenggaraan <span class="badge">kendiri</span> menambah <strong>0.01%</strong> (per event).<br/>
-              - Penyelenggaraan <span class="badge">major</span> menambah <strong>1%</strong> (per event).<br/>
-              - Setiap maintenance effect diratakan masuk selama <strong>${SMOOTH_MONTHS} bulan</strong> (menggunakan 'ease-in-out curve') supaya garis nampak lebih realistik.<br/>
+              - Penyelenggaraan <span class="badge">kendiri</span> menambah <strong>0.001%</strong> (per event).<br/>
+              - Penyelenggaraan <span class="badge">major</span> menambah <strong>0.01%</strong> (per event).<br/>
+              - Setiap maintenance effect diratakan masuk selama <strong>${SMOOTH_MONTHS} bulan</strong>.<br/>
             </div>
             <div style="margin-top:10px;">
               <button id="mlw_btn_gen_dummy" class="secondary">Generate Dummy Past Records</button>
-              <div class="small info-line">Data disimpan di browser (localStorage).</div>
+              <div class="small info-line">Data disimpan di Supabase database.</div>
             </div>
           </div>
         </div>
@@ -286,39 +409,29 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
       const select = document.getElementById("mlw_machine_select");
       function refreshMachineSelect() {
         select.innerHTML = '<option value="">-- pilih mesin --</option>';
-        const machines = data[session].machines || {};
-        Object.keys(machines).forEach(k => {
-          const m = machines[k];
+        machines.forEach(m => {
           const opt = document.createElement("option");
-          opt.value = k;
-          opt.textContent = `${m.name} — ${m.machineId} (beli ${m.purchaseDate})`;
+          opt.value = m.id;
+          opt.textContent = `${m.name} — ${m.machine_id} (beli ${m.purchase_date})`;
           select.appendChild(opt);
         });
       }
       refreshMachineSelect();
 
-      // CHART
+      
       let chart = null;
       
-      // --- CHANGED: baselinePercentAt now accepts a clamp parameter ---
-      // This is the core fix for the graph.
-      // The (clampToZero = true) is for the visible dotted line (stops at 0).
-      // The (clampToZero = false) is for the internal calculation, allowing the baseline to go negative
-      // so we can add the maintenance boost to it correctly.
       function baselinePercentAt(dateISO, purchaseISO, clampToZero = true) {
         const p = new Date(purchaseISO);
         const d = new Date(dateISO);
         if (d < p) return 100;
         const elapsed = d - p;
         const percent = 100 - (elapsed / (TEN_YEARS_DAYS * 24*3600*1000)) * 100;
-        // If clampToZero is true, stop at 0. Otherwise, allow negative values for calculation.
         return clampToZero ? Math.max(0, percent) : percent;
       }
 
-      // makeMonthlyLabels now allows dynamic extension based on total maintenance boost
       function makeMonthlyLabels(purchaseISO, totalBoostPct = 0) {
         const start = new Date(purchaseISO);
-        // convert totalBoostPct to extra days (each +1% = +0.1 year)
         const extraDays = (totalBoostPct / 1) * (DAYS_IN_YEAR / 10);
         const end = new Date(
           start.getTime() +
@@ -334,67 +447,49 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
         return labels;
       }
 
-
-      // smooth additive contribution from maintenances
-      function computeSeries(machine) {
-        const totalBoost = (machine.maintenances || []).reduce((sum, m) => sum + (EFFECTS[m.type] || 0), 0);
-        const labels = makeMonthlyLabels(machine.purchaseDate, totalBoost);
+      function computeSeries(machine, machineMaintenances) {
+        const totalBoost = machineMaintenances.reduce((sum, m) => sum + (EFFECTS[m.maintenance_type] || 0), 0);
+        const labels = makeMonthlyLabels(machine.purchase_date, totalBoost);
         
-        // --- CHANGED: Baseline vs Adjusted calculation ---
-        // 'baseline' is the visible dotted line, clamped at 0.
-        const baseline = labels.map(l => baselinePercentAt(l, machine.purchaseDate, true));
-        // 'adjusted' is the internal calculation array, *not* clamped, so it can go negative.
-        const adjusted = labels.map(l => baselinePercentAt(l, machine.purchaseDate, false));
+        const baseline = labels.map(l => baselinePercentAt(l, machine.purchase_date, true));
+        const adjusted = labels.map(l => baselinePercentAt(l, machine.purchase_date, false));
 
-        // prepare maintenances sorted asc
-        const maints = (machine.maintenances || []).slice().sort((a,b) => a.date.localeCompare(b.date));
+        const maints = machineMaintenances.slice().sort((a,b) => a.maintenance_date.localeCompare(b.maintenance_date));
         
-        // Easing function: x goes from 0 to 1
         const easeInOutSine = (x) => -(Math.cos(Math.PI * x) - 1) / 2;
 
-        // for each maintenance, distribute its boost over the next SMOOTH_MONTHS months
         for (const m of maints) {
-          const boost = EFFECTS[m.type] || 0;
-          // find first index where label >= m.date
-          const idx = labels.findIndex(l => l >= m.date);
+          const boost = EFFECTS[m.maintenance_type] || 0;
+          const idx = labels.findIndex(l => l >= m.maintenance_date);
           if (idx === -1) continue;
           for (let j = idx; j < labels.length; j++) {
             const monthsSince = j - idx;
-            // Calculate progress from 0.0 to 1.0 over SMOOTH_MONTHS
             let progress = Math.min(1, (monthsSince + 1) / SMOOTH_MONTHS);
-            // Apply easing function
             const factor = easeInOutSine(progress);
-            // Add the boost. This is why 'adjusted' couldn't be clamped.
-            // e.g., -10% (baseline) + 20% (boost) = +10%
             adjusted[j] = Math.min(100, adjusted[j] + boost * factor);
           }
         }
         
-        // --- CHANGED: Final clamp ---
-        // Now that all boosts are added, *now* we clamp the final array to 0.
         const finalAdjusted = adjusted.map(v => Math.max(0, v));
 
-        // create maintenance markers (position & y)
         const markers = maints.map(m => {
-          let idx = labels.findIndex(l => l >= m.date);
+          let idx = labels.findIndex(l => l >= m.maintenance_date);
           if (idx === -1) idx = labels.length - 1;
-          // Use finalAdjusted[idx] for the marker's Y position
           return { ...m, index: idx, y: finalAdjusted[idx] };
         });
 
-        // Return the clamped baseline and the final adjusted line
         return { labels, baseline, adjusted: finalAdjusted, markers };
       }
 
-      function drawChartFor(key) {
+      function drawChartFor(machine, machineMaintenances) {
         const canvas = document.getElementById("mlw_chart");
-        if (!key) {
+        if (!machine) {
           if (chart) { chart.destroy(); chart = null; }
           canvas.getContext("2d").clearRect(0,0,canvas.width, canvas.height);
           return;
         }
-        const machine = data[session].machines[key];
-        const s = computeSeries(machine);
+        
+        const s = computeSeries(machine, machineMaintenances);
         if (chart) chart.destroy();
         const ctx = canvas.getContext("2d");
 
@@ -410,27 +505,26 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
                 borderColor: "rgba(107,114,128,0.75)",
                 borderDash: [5, 5], 
                 pointRadius: 0,
-                tension: 0, // perfectly straight
+                tension: 0, 
                 borderWidth: 2
               },
               {
                 label: "Tambahan Jangka Hayat",
                 data: s.baseline.map((_, i) => i >= (12*10) ? 100 : null),
                 fill: true,
-                backgroundColor: "rgba(0, 126, 255, 0.05)", // Branded
+                backgroundColor: "rgba(0, 126, 255, 0.05)", 
                 borderWidth: 0,
                 pointRadius: 0
               },
               {
                 label: "Jangka Hayat Selepas Penyelenggaraan",
-                data: s.adjusted, // This is now the finalAdjusted array
+                data: s.adjusted, 
                 fill: false,
-                borderColor: "var(--color-blue)", // Branded
+                borderColor: "var(--color-blue)", 
                 pointRadius: 2,
-                tension: 0.4, // more curved
+                tension: 0.4, 
                 borderWidth: 2
               },
-              // markers will be added as scatter dataset below
             ],
           },
           options: {
@@ -465,233 +559,340 @@ For production/multi-user, connect to a backend (Firebase, WP REST API, etc.).
           }
         });
 
-        // add maintenance markers as scatter
         if (s.markers.length) {
           chart.data.datasets.push({
             type: 'scatter',
             label: 'Penyelenggaraan',
-            data: s.markers.map(m => ({ x: s.labels[m.index], y: m.y, type: m.type, date: m.date })),
-            pointStyle: s.markers.map(m => m.type === 'major' ? 'triangle' : 'circle'),
-            pointRadius: s.markers.map(m => m.type === 'major' ? 6 : 4),
-            // Branded colors
-            backgroundColor: s.markers.map(m => m.type === 'major' ? 'var(--color-red)' : 'rgba(16,185,129,0.9)'),
+            data: s.markers.map(m => ({ x: s.labels[m.index], y: m.y, type: m.maintenance_type, date: m.maintenance_date })),
+            pointStyle: s.markers.map(m => m.maintenance_type === 'major' ? 'triangle' : 'circle'),
+            pointRadius: s.markers.map(m => m.maintenance_type === 'major' ? 6 : 4),
+            backgroundColor: s.markers.map(m => m.maintenance_type === 'major' ? 'var(--color-red)' : 'rgba(16,185,129,0.9)'),
             showLine: false
           });
         }
         chart.update();
       }
 
-      // show machine info & logs
-      function showMachineInfo(key) {
+      async function showMachineInfo(machineId) {
         const info = document.getElementById("mlw_machine_info");
         const logsDiv = document.getElementById("mlw_logs");
-        if (!key) {
+        
+        if (!machineId) {
           info.innerHTML = '<div class="small">Pilih mesin untuk lihat jangka hayat, tarikh beli, dan logs.</div>';
           logsDiv.innerHTML = '';
-          drawChartFor(null);
+          drawChartFor(null, []);
           return;
         }
-        const m = data[session].machines[key];
-        const purchase = new Date(m.purchaseDate);
+        
+        const machine = machines.find(m => m.id === machineId);
+        if (!machine) return;
+        
+        maintenances = await loadMachineMaintenance(machineId);
+        
+        const purchase = new Date(machine.purchase_date);
         const eol = new Date(purchase.getTime() + TEN_YEARS_DAYS * 24*3600*1000);
         const eolISO = eol.toISOString().slice(0,10);
         const todayISO = new Date().toISOString().slice(0,10);
         
-        // Use the clamped baseline for "Jangka hayat asas hari ini"
-        const baselineNow = baselinePercentAt(todayISO, m.purchaseDate, true);
+        const baselineNow = baselinePercentAt(todayISO, machine.purchase_date, true);
         
-        // Recalculate healthBoostNow for *current health* using the smoothing logic
         let healthBoostNow = 0;
         const easeInOutSine = (x) => -(Math.cos(Math.PI * x) - 1) / 2;
-        (m.maintenances || []).forEach(mm => {
-            if (mm.date <= todayISO) {
-                const boost = EFFECTS[mm.type] || 0;
-                const monthsSince = monthsBetween(mm.date, todayISO);
+        maintenances.forEach(mm => {
+            if (mm.maintenance_date <= todayISO) {
+                const boost = EFFECTS[mm.maintenance_type] || 0;
+                const monthsSince = monthsBetween(mm.maintenance_date, todayISO);
                 let progress = Math.min(1, (monthsSince + 1) / SMOOTH_MONTHS);
                 const factor = easeInOutSine(progress);
                 healthBoostNow += boost * factor;
             }
         });
 
-        // Use the *unclamped* baseline for calculating adjusted health
-        const rawBaselineNow = baselinePercentAt(todayISO, m.purchaseDate, false);
+        const rawBaselineNow = baselinePercentAt(todayISO, machine.purchase_date, false);
         const adjustedNow = Math.min(100, Math.max(0, rawBaselineNow + healthBoostNow));
 
-        // Calculate extended EOL date based on *total* boost from *all* logs
-        const totalBoostAllTime = (m.maintenances || []).reduce((sum, mm) => sum + (EFFECTS[mm.type] || 0), 0);
-        const yearsExtended = totalBoostAllTime / 10; // every +1% = +0.1 year
+        const totalBoostAllTime = maintenances.reduce((sum, mm) => sum + (EFFECTS[mm.maintenance_type] || 0), 0);
+        const yearsExtended = totalBoostAllTime / 10; 
         const eolAdjusted = new Date(eol.getTime() + yearsExtended * DAYS_IN_YEAR * 24 * 3600 * 1000);
         const eolAdjustedISO = eolAdjusted.toISOString().slice(0,10);
+        
+        let healthStatus = '';
+        let healthClass = '';
+        const sortedMaints = maintenances.slice().sort((a,b) => b.maintenance_date.localeCompare(a.maintenance_date));
+        const lastMaint = sortedMaints.length > 0 ? sortedMaints[0].maintenance_date : null;
+        const monthsSinceLastMaint = lastMaint ? monthsBetween(lastMaint, todayISO) : 999;
 
+        if (adjustedNow > 60 && monthsSinceLastMaint <= 1) {
+            healthStatus = 'Baik';
+            healthClass = 'health-baik';
+        } else if (adjustedNow > 40 || monthsSinceLastMaint <= 12) {
+            healthStatus = 'Sederhana (Perlu Perhatian)';
+            healthClass = 'health-sederhana';
+        } else {
+            healthStatus = 'Buruk (Perlu Penyelenggaraan)';
+            healthClass = 'health-buruk';
+        }
+        
         info.innerHTML = `
-          <div><strong>Nama:</strong> ${m.name}</div>
-          <div><strong>ID Mesin:</strong> ${m.machineId}</div>
-          <div class="info-line"><strong>Tarikh Beli:</strong> ${m.purchaseDate}</div>
+          <div class="health-status ${healthClass}">
+            Status Kesihatan Mesin: <strong>${healthStatus}</strong>
+          </div>
+          <div class="info-line" style="margin-top: 10px;"><strong>Nama:</strong> ${machine.name}</div>
+          <div><strong>ID Mesin:</strong> ${machine.machine_id}</div>
+          <div class="info-line"><strong>Tarikh Beli:</strong> ${machine.purchase_date}</div>
           <div class="info-line"><strong>Jangka hayat tamat (base):</strong> ${eolISO} (10 tahun selepas pembelian)</div>
-          <div class="info-line"><strong>Jangka hayat asas hari ini:</strong> ${baselineNow.toFixed(2)}%</div>
-          <div class="info-line"><strong>Jangka hayat (diselenggara) hari ini:</strong> ${adjustedNow.toFixed(2)}%</div>
-          <!-- CHANGED: Branded highlight style -->
+          <div class="info-line"><strong>Jangka hayat asas hari ini:</strong> ${baselineNow.toFixed(4)}%</div>
+          <div class="info-line"><strong>Jangka hayat (diselenggara) hari ini:</strong> ${adjustedNow.toFixed(4)}%</div>
           <div class="info-line" style="background-color: var(--color-blue-light); color: var(--color-blue); font-weight: 600; padding: 6px 10px; border-radius: 6px;">
             <strong>Tarikh jangka hayat dijangka tamat (setelah diselenggara):</strong> ${eolAdjustedISO}
           </div>
         `;
 
-
-        // logs (newest first)
         logsDiv.innerHTML = "";
-        const maints = (m.maintenances || []).slice().sort((a,b) => b.date.localeCompare(a.date));
-        if (!maints.length) {
+        if (!sortedMaints.length) {
           logsDiv.innerHTML = '<div class="small muted">Tiada rekod penyelenggaraan.</div>';
         } else {
-          for (const mm of maints) {
+          for (const mm of sortedMaints) {
             const item = document.createElement("div");
             item.className = "log-item";
             
-            const boostPct = EFFECTS[mm.type] || 0;
-            const boostDays = (boostPct / 10 * DAYS_IN_YEAR).toFixed(1);
+            const boostPct = EFFECTS[mm.maintenance_type] || 0;
+            const boostDays = (boostPct / 10 * DAYS_IN_YEAR).toFixed(2);
 
             item.innerHTML = `
               <div class="flex" style="justify-content: space-between; align-items: flex-start;">
                 <div>
-                  <strong>${mm.date}</strong> — <span class="badge">${mm.type}</span> by ${mm.name} (${mm.role})
-                  <div class="notes small" style="margin-top: 4px;">${(mm.notes||'Tiada nota')}</div>
+                  <strong>${mm.maintenance_date}</strong> <span class="muted">[Log ID: ${mm.id}]</span> — <span class="badge">${mm.maintenance_type}</span> by ${mm.maintainer_name} (${mm.maintainer_role})
+                  <div class="notes small" style="margin-top: 4px;">${mm.notes || 'Tiada nota'}</div>
                 </div>
-                <!-- Branded chip -->
-                <div class="chip" style="font-size: 12px; flex-shrink: 0; margin-left: 8px;">+${boostPct.toFixed(2)}% (+${boostDays} hari)</div>
+                <div class="chip" style="font-size: 12px; flex-shrink: 0; margin-left: 8px;">+${boostPct.toFixed(3)}% (+${boostDays} hari)</div>
               </div>
               <div style="margin-top:6px;">
-                <!-- Branded delete button -->
                 <button class="mlw_btn_del_log" data-id="${mm.id}">Padam</button>
               </div>
             `;
+            
             logsDiv.appendChild(item);
           }
         }
-        // delete handlers
+        
         Array.from(logsDiv.querySelectorAll('.mlw_btn_del_log')).forEach(btn => {
-          btn.onclick = () => {
+          btn.onclick = async () => {
             const id = btn.dataset.id;
             if (!confirm("Padam log ini?")) return;
-            m.maintenances = m.maintenances.filter(x => x.id !== id);
-            save(KEY_DATA, data);
-            showMachineInfo(key);
-            drawChartFor(key);
+            
+            const { error } = await supabase
+              .from('maintenances')
+              .delete()
+              .eq('id', id)
+              .eq('user_id', currentUser.id);
+            
+            if (error) {
+              alert(`Error: ${error.message}`);
+              return;
+            }
+            
+            await showMachineInfo(machineId);
           };
         });
+        
+        drawChartFor(machine, maintenances);
       }
 
       // ---------- EVENTS ----------
-      document.getElementById("mlw_btn_add").onclick = () => {
+      document.getElementById("mlw_btn_add").onclick = async () => {
         const name = document.getElementById("mlw_machine_name").value.trim();
         const mid = document.getElementById("mlw_machine_id").value.trim();
         const pdate = document.getElementById("mlw_purchase_date").value;
-        if (!name || !mid || !pdate) return alert("Sila isi semua maklumat mesin");
-        const key = mid;
-        data[session].machines[key] = data[session].machines[key] || { name, machineId: mid, purchaseDate: pdate, maintenances: [] };
-        data[session].machines[key].name = name;
-        data[session].machines[key].purchaseDate = pdate;
-        save(KEY_DATA, data);
+        const btn = document.getElementById("mlw_btn_add");
+        
+        if (!name || !mid || !pdate) {
+          alert("Sila isi semua maklumat mesin");
+          return;
+        }
+        
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loading"></span> Saving...';
+        
+        const { data, error } = await supabase
+          .from('machines')
+          .upsert({
+            machine_id: mid,
+            name: name,
+            purchase_date: pdate,
+            user_id: currentUser.id
+          }, {
+            onConflict: 'user_id,machine_id'
+          })
+          .select()
+          .single();
+        
+        btn.disabled = false;
+        btn.textContent = "Tambah / Simpan Mesin";
+        
+        if (error) {
+          alert(`Error: ${error.message}`);
+          return;
+        }
+        
+        machines = await loadUserMachines();
         refreshMachineSelect();
-        select.value = key;
-        showMachineInfo(key);
-        drawChartFor(key);
+        select.value = data.id;
+        await showMachineInfo(data.id);
         alert("Mesin disimpan");
       };
 
-      select.onchange = function() {
-        const key = this.value;
-        showMachineInfo(key);
-        drawChartFor(key);
+      select.onchange = async function() {
+        const machineId = this.value;
+        await showMachineInfo(machineId);
         document.getElementById("mlw_log_date").value = new Date().toISOString().slice(0,10);
       };
 
-      document.getElementById("mlw_btn_gen_dummy").onclick = () => {
-        const key = select.value;
-        if (!key) return alert("Pilih mesin dahulu untuk generate dummy records");
-        const machine = data[session].machines[key];
-        // generate monthly kendiri + 2 major per year (every 6 months) from purchase to today (or 10y)
-        const start = new Date(machine.purchaseDate);
+      document.getElementById("mlw_btn_gen_dummy").onclick = async () => {
+        const machineId = select.value;
+        if (!machineId) {
+          alert("Pilih mesin dahulu untuk generate dummy records");
+          return;
+        }
+        
+        const machine = machines.find(m => m.id === machineId);
+        const start = new Date(machine.purchase_date);
         const today = new Date();
         const end = new Date(Math.min(today.getTime(), start.getTime() + TEN_YEARS_DAYS * 24*3600*1000));
         const items = [];
         const d = new Date(start.getTime());
+        
         while (d <= end) {
           const iso = d.toISOString().slice(0,10);
-          items.push({ id: uid(), date: iso, name: "Auto Demo", role: "Student", type: "kendiri", notes: "Auto monthly kendiri" });
-          // every 6 months from start -> major
+          items.push({
+            machine_id: machineId,
+            user_id: currentUser.id,
+            maintenance_date: iso,
+            maintainer_name: "Auto Demo",
+            maintainer_role: "Student",
+            maintenance_type: "kendiri",
+            notes: "Auto monthly kendiri"
+          });
+          
           const monthsSinceStart = monthsBetween(start.toISOString().slice(0,10), d.toISOString().slice(0,10));
-          if (monthsSinceStart > 0 && monthsSinceStart % 6 === 0) { // Added > 0 check
-            items.push({ id: uid(), date: iso, name: "Auto Demo", role: "Technician", type: "major", notes: "Auto semiannual major" });
+          if (monthsSinceStart > 0 && monthsSinceStart % 6 === 0) { 
+            items.push({
+              machine_id: machineId,
+              user_id: currentUser.id,
+              maintenance_date: iso,
+              maintainer_name: "Auto Demo",
+              maintainer_role: "Technician",
+              maintenance_type: "major",
+              notes: "Auto semiannual major"
+            });
           }
           d.setMonth(d.getMonth() + 1);
         }
-        // dedupe by date+type
-        const existing = new Set((machine.maintenances || []).map(x => x.date + '|' + x.type));
-        for (const it of items) {
-          const tag = it.date + '|' + it.type;
-          if (!existing.has(tag)) machine.maintenances.push(it);
+        
+        const { error } = await supabase
+          .from('maintenances')
+          .insert(items);
+        
+        if (error) {
+          alert(`Error: ${error.message}`);
+          return;
         }
-        machine.maintenances.sort((a,b) => a.date.localeCompare(b.date));
-        save(KEY_DATA, data);
-        showMachineInfo(key);
-        drawChartFor(key);
-        alert("Dummy past records generated (local).");
+        
+        await showMachineInfo(machineId);
+        alert("Dummy past records generated!");
       };
 
-      document.getElementById("mlw_btn_add_log").onclick = () => {
-        const key = select.value;
-        if (!key) return alert("Pilih mesin dahulu");
+      document.getElementById("mlw_btn_add_log").onclick = async () => {
+        const machineId = select.value;
+        if (!machineId) {
+          alert("Pilih mesin dahulu");
+          return;
+        }
+        
         const date = document.getElementById("mlw_log_date").value;
         const name = document.getElementById("mlw_log_name").value.trim();
         const role = document.getElementById("mlw_log_role").value;
         const type = document.getElementById("mlw_log_type").value;
         const notes = document.getElementById("mlw_log_notes").value.trim();
-        if (!date || !name) return alert("Sila isi tarikh dan nama penyelenggara");
+        const btn = document.getElementById("mlw_btn_add_log");
         
-        // --- Validation: Cannot log before purchase date ---
-        const m = data[session].machines[key];
-        if (date < m.purchaseDate) {
-            return alert(`Tarikh log (${date}) tidak boleh sebelum tarikh pembelian mesin (${m.purchaseDate}).`);
+        if (!date || !name) {
+          alert("Sila isi tarikh dan nama penyelenggara");
+          return;
         }
         
-        m.maintenances = m.maintenances || [];
-        m.maintenances.push({ id: uid(), date, name, role, type, notes });
-        m.maintenances.sort((a,b) => a.date.localeCompare(b.date));
-        save(KEY_DATA, data);
-        // clear
+        const machine = machines.find(m => m.id === machineId);
+        if (date < machine.purchase_date) {
+          alert(`Tarikh log (${date}) tidak boleh sebelum tarikh pembelian mesin (${machine.purchase_date}).`);
+          return;
+        }
+        
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loading"></span> Adding...';
+        
+        const { error } = await supabase
+          .from('maintenances')
+          .insert({
+            machine_id: machineId,
+            user_id: currentUser.id,
+            maintenance_date: date,
+            maintainer_name: name,
+            maintainer_role: role,
+            maintenance_type: type,
+            notes: notes || null
+          });
+        
+        btn.disabled = false;
+        btn.textContent = "Tambah Log";
+        
+        if (error) {
+          alert(`Error: ${error.message}`);
+          return;
+        }
+        
         document.getElementById("mlw_log_name").value = "";
         document.getElementById("mlw_log_notes").value = "";
-        showMachineInfo(key);
-        drawChartFor(key);
+        await showMachineInfo(machineId);
       };
 
-      document.getElementById("mlw_btn_clear_logs").onclick = () => {
-        const key = select.value;
-        if (!key) return alert("Pilih mesin dahulu");
+      document.getElementById("mlw_btn_clear_logs").onclick = async () => {
+        const machineId = select.value;
+        if (!machineId) {
+          alert("Pilih mesin dahulu");
+          return;
+        }
+        
         if (!confirm("Padam semua logs untuk mesin ini?")) return;
-        data[session].machines[key].maintenances = [];
-        save(KEY_DATA, data);
-        showMachineInfo(key);
-        drawChartFor(key);
+        
+        const { error } = await supabase
+          .from('maintenances')
+          .delete()
+          .eq('machine_id', machineId)
+          .eq('user_id', currentUser.id);
+        
+        if (error) {
+          alert(`Error: ${error.message}`);
+          return;
+        }
+        
+        await showMachineInfo(machineId);
       };
 
-      document.getElementById("mlw_btn_logout").onclick = () => {
+      document.getElementById("mlw_btn_logout").onclick = async () => {
         if (!confirm("Log keluar?")) return;
-        session = null; save(KEY_SESS, null);
+        await supabase.auth.signOut();
+        currentUser = null;
         render();
       };
 
-      // preselect first machine if available
-      if (select.options.length > 1) {
-        select.selectedIndex = 1;
-        select.onchange();
+      if (machines.length > 0) {
+        select.value = machines[0].id;
+        await showMachineInfo(machines[0].id);
       } else {
-        showMachineInfo(null);
+        await showMachineInfo(null);
       }
     }
 
-    // initial render
     render();
   })();
 </script>
-
