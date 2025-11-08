@@ -1,3 +1,4 @@
+
 <!--
 Machine Lifetime Tracker with Supabase Backend
 Embed this in WordPress via a Custom HTML block.
@@ -623,10 +624,10 @@ Embed this in WordPress via a Custom HTML block.
         const lastMaint = sortedMaints.length > 0 ? sortedMaints[0].maintenance_date : null;
         const monthsSinceLastMaint = lastMaint ? monthsBetween(lastMaint, todayISO) : 999;
 
-        if (adjustedNow > 60 && monthsSinceLastMaint <= 1) {
+        if (monthsSinceLastMaint <= 1) {
             healthStatus = 'Baik';
             healthClass = 'health-baik';
-        } else if (adjustedNow > 40 || monthsSinceLastMaint <= 12) {
+        } else if (monthsSinceLastMaint <= 12) {
             healthStatus = 'Sederhana (Perlu Perhatian)';
             healthClass = 'health-sederhana';
         } else {
