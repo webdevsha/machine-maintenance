@@ -627,11 +627,11 @@ Embed this in WordPress via a Custom HTML block.
         if (monthsSinceLastMaint <= 1) {
             healthStatus = 'Baik';
             healthClass = 'health-baik';
-        } else if (monthsSinceLastMaint <= 12) {
-            healthStatus = 'Sederhana (Perlu Perhatian)';
+        } else if (monthsSinceLastMaint < 6) {
+            healthStatus = 'Sederhana (Perlu Penyelenggaraan Kendiri)';
             healthClass = 'health-sederhana';
         } else {
-            healthStatus = 'Buruk (Perlu Penyelenggaraan)';
+            healthStatus = 'Buruk (Perlu Penyelenggaraan Major)';
             healthClass = 'health-buruk';
         }
         
